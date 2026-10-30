@@ -1,225 +1,57 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-Hant">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Bella 的匯率轉換器</title>
-  <style>
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      padding: 40px 20px;
-      min-height: 100vh;
-      background: #f7f3ed;
-      color: #343c38;
-      font-family: system-ui, sans-serif;
-    }
-    main {
-      max-width: 440px;
-      margin: auto;
-      padding: 28px;
-      background: white;
-      border-radius: 24px;
-      box-shadow: 0 12px 40px #343c3810;
-    }
-    h1 { font-size: 26px; margin-bottom: 8px; }
-    p { line-height: 1.6; }
-    .intro, small { color: #68736c; }
-    label { display: block; margin: 22px 0 8px; }
-    input, select, button {
-      width: 100%;
-      padding: 14px;
-      border: 1px solid #d7dfd9;
-      border-radius: 12px;
-      font: inherit;
-      font-size: 17px;
-    }
-    input, select { background: white; color: #343c38; }
-    button {
-      cursor: pointer;
-      margin-top: 18px;
-      border: 0;
-      background: #426b56;
-      color: white;
-    }
-    button:disabled { opacity: .6; cursor: wait; }
-    #swap { background: #edf3ef; color: #426b56; }
-    #result {
-      margin-top: 24px;
-      padding: 20px;
-      border-radius: 16px;
-      background: #f2f6f3;
-      font-size: 26px;
-      font-weight: bold;
-      overflow-wrap: anywhere;
-    }
-    #rate, #updated { font-size: 14px; }
-    a { color: #426b56; }
-  </style>
-</head>
-<body>
-  <main>
-    <h1>💱 Bella 的匯率轉換器</h1>
-    <p class="intro">輸入金額，輕鬆換算旅行預算。</p>
-
-    <form id="converter">
-      <label for="amount">換算金額</label>
-      <input id="amount" type="number" inputmode="decimal"
-             min="0" step="any" value="1000" required>
-
-      <label for="from">原始幣別</label>
-      <select id="from"></select>
-
-      <button id="swap" type="button">⇅ 交換幣別</button>
-
-      <label for="to">換成幣別</label>
-      <select id="to"></select>
-
-      <button id="convert" type="submit" disabled>載入匯率中…</button>
-    </form>
-
-    <div id="result" role="status" aria-live="polite">正在取得匯率…</div>
-    <p id="rate"></p>
-    <p id="updated"></p>
-
-    <small>
-      參考匯率每日更新；實際換匯金額依銀行報價及手續費而異。
-      <br>
-      <a href="https://www.exchangerate-api.com"
-         target="_blank" rel="noopener">
-        Rates By Exchange Rate API
-      </a>
-    </small>
-  </main>
-
-  <script>
-    const currencies = {
-      TWD: "台幣",
-      USD: "美元",
-      JPY: "日圓",
-      KRW: "韓元",
-      HKD: "港幣",
-      EUR: "歐元",
-      GBP: "英鎊",
-      CNY: "人民幣",
-      AUD: "澳幣",
-      SGD: "新加坡幣"
-    };
-
-    const amount = document.getElementById("amount");
-    const from = document.getElementById("from");
-    const to = document.getElementById("to");
-    const result = document.getElementById("result");
-    const rate = document.getElementById("rate");
-    const updated = document.getElementById("updated");
-    const convertButton = document.getElementById("convert");
-    let rates = null;
-
-    for (const [code, name] of Object.entries(currencies)) {
-      from.add(new Option(`${name} ${code}`, code));
-      to.add(new Option(`${name} ${code}`, code));
-    }
-    from.value = "TWD";
-    to.value = "KRW";
-
-    function convert() {
-      if (!rates) return;
-      rate.textContent = "";
-
-      if (amount.value.trim() === "") {
-        result.textContent = "請輸入金額";
-        return;
-      }
-
-      const value = Number(amount.value);
-      if (!Number.isFinite(value) || value < 0) {
-        result.textContent = "請輸入大於或等於 0 的有效金額";
-        return;
-      }
-
-      const exchangeRate = rates[to.value] / rates[from.value];
-      const total = value * exchangeRate;
-      if (!Number.isFinite(total)) {
-        result.textContent = "金額過大，請輸入較小的數值";
-        return;
-      }
-
-      result.textContent = new Intl.NumberFormat("zh-TW", {
-        style: "currency",
-        currency: to.value,
-        currencyDisplay: "code"
-      }).format(total);
-
-      rate.textContent =
-        `1 ${from.value} ≈ ${
-          exchangeRate.toLocaleString("zh-TW", {
-            maximumSignificantDigits: 6
-          })
-        } ${to.value}`;
-    }
-
-    async function loadRates() {
-      convertButton.disabled = true;
-      convertButton.textContent = "載入匯率中…";
-      result.textContent = "正在取得匯率…";
-      rate.textContent = "";
-      updated.textContent = "";
-
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 12000);
-
-      try {
-        const response = await fetch(
-          "https://open.er-api.com/v6/latest/USD",
-          { signal: controller.signal }
-        );
-        if (!response.ok) throw new Error("連線失敗");
-
-        const data = await response.json();
-        if (data.result !== "success") throw new Error("資料錯誤");
-
-        for (const code of Object.keys(currencies)) {
-          if (!Number.isFinite(data.rates?.[code]) ||
-              data.rates[code] <= 0) {
-            throw new Error("匯率缺漏");
-          }
-        }
-
-        rates = data.rates;
-        updated.textContent = "匯率更新時間：" +
-          new Date(data.time_last_update_unix * 1000)
-            .toLocaleString("zh-TW", { timeZone: "Asia/Taipei" }) +
-          "（台灣時間）";
-        convertButton.textContent = "開始換算";
-        convert();
-      } catch (error) {
-        rates = null;
-        result.textContent = "無法取得匯率，請確認網路後重試";
-        convertButton.textContent = "重新取得匯率";
-      } finally {
-        clearTimeout(timeout);
-        convertButton.disabled = false;
-      }
-    }
-
-    document.getElementById("converter").addEventListener("submit", event => {
-      event.preventDefault();
-      if (rates) convert();
-      else loadRates();
-    });
-
-    document.getElementById("swap").addEventListener("click", () => {
-      const previous = from.value;
-      from.value = to.value;
-      to.value = previous;
-      convert();
-    });
-
-    amount.addEventListener("input", convert);
-    from.addEventListener("change", convert);
-    to.addEventListener("change", convert);
-
-    loadRates();
-  </script>
-</body>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>貨幣轉換+旅行帳本</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f6f3ed;color:#293d33;font:16px/1.6 system-ui,sans-serif;padding:24px 12px}main{max-width:760px;margin:auto;background:white;border-radius:22px;padding:24px}h1{font-size:25px;margin:0}h2{font-size:21px;margin:28px 0 12px}p{margin:10px 0}.muted,small{color:#68756d}label{display:block;margin:14px 0 5px}input,select,button{font:inherit;border-radius:10px;min-height:46px;padding:10px;width:100%;border:1px solid #d6dfd8;background:white;color:inherit}button{cursor:pointer;background:#426b56;color:white;border:0}button:disabled{opacity:.5;cursor:wait}.row{display:grid;grid-template-columns:1fr 54px 1fr;gap:10px;align-items:end}.row button{background:#edf3ef;color:#426b56}#result{font-weight:700;font-size:28px;background:#f0f5f1;padding:16px;border-radius:12px;margin-top:18px;overflow-wrap:anywhere}#save{margin-top:14px}.table-wrap{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:14px;min-width:480px}th,td{padding:12px 8px;border-bottom:1px solid #e5eae6;text-align:left}th{background:#f0f5f1;white-space:nowrap}td:nth-child(3),td:nth-child(4){text-align:right;font-variant-numeric:tabular-nums}td:nth-child(2){overflow-wrap:anywhere;max-width:180px}.action{padding:4px 6px;min-height:36px;width:auto;font-size:13px;background:#edf3ef;color:#426b56;margin:2px}tfoot{font-weight:700}#export{background:#edf3ef;color:#426b56;margin-top:16px}#notice{min-height:26px;color:#6f4935}.editing{background:#fff6e7}#cancel{margin-top:8px;background:#eee;color:#34483c}a{color:#426b56}small{display:block;margin-top:12px}@media(max-width:420px){main{padding:18px 14px}.row{gap:6px;grid-template-columns:minmax(0,1fr) 42px minmax(0,1fr)}select{font-size:14px;padding:9px 4px}}
+</style>
+<main>
+<h1>💱 貨幣轉換+旅行帳本</h1>
+<p class="muted">先換算，再把買了什麼記下來。</p>
+<label for="amount">商品原價</label><input id="amount" type="number" inputmode="decimal" min="0" step="any" value="1000">
+<div class="row"><div><label for="from">原始幣別</label><select id="from"></select></div><button id="swap" aria-label="交換幣別">⇄</button><div><label for="to">換成幣別</label><select id="to"></select></div></div>
+<div id="result" role="status" aria-live="polite">載入匯率中…</div>
+<p id="rate" class="muted"></p><small id="updated"></small>
+<button id="retry" hidden>重新取得匯率</button>
+<label for="name">消費項目</label><input id="name" maxlength="80" placeholder="例如：午餐、衣服、伴手禮">
+<button id="save" disabled>＋ 記錄這筆消費</button><button id="cancel" hidden>取消修改</button>
+<p id="notice" role="status" aria-live="polite"></p>
+<h2>🛍️ 購物記帳表</h2>
+<small>手機可左右滑動表格。台幣金額保留記錄當時的換算值。</small>
+<div class="table-wrap" tabindex="0" role="region" aria-label="購物記帳表，可左右捲動">
+<table><thead><tr><th>日期</th><th>消費項目</th><th>原價／幣別</th><th>約台幣</th><th>操作</th></tr></thead><tbody id="rows"></tbody><tfoot><tr><td colspan="3">合計（台幣）</td><td id="total">0.00</td><td></td></tr></tfoot></table>
+</div><button id="export">↓ 匯出記帳表（CSV）</button>
+<small>紀錄保存在這個瀏覽器，不會同步至其他裝置；清除網站資料可能遺失，旅行後請匯出備份。</small>
+<small>匯率每日更新，實際換匯與刷卡金額依銀行報價及手續費而異。<a href="https://www.exchangerate-api.com" target="_blank" rel="noopener">Rates By Exchange Rate API</a></small>
+</main>
+<script>
+'use strict';
+const $=id=>document.getElementById(id);
+const currencies={TWD:'台幣',USD:'美元',JPY:'日圓',KRW:'韓元',HKD:'港幣',EUR:'歐元',GBP:'英鎊',CNY:'人民幣',AUD:'澳幣',SGD:'新加坡幣'};
+const key='bella-shopping-v1';
+let records=[],rates=null,rateDate='',editing=-1,storageError=false,readError=false;
+const number=n=>n.toLocaleString('zh-TW',{minimumFractionDigits:2,maximumFractionDigits:2});
+const currency=(n,c)=>new Intl.NumberFormat('zh-TW',{style:'currency',currency:c,currencyDisplay:'code'}).format(n);
+for(const [code,label] of Object.entries(currencies)){ $('from').add(new Option(label+' '+code,code));$('to').add(new Option(label+' '+code,code)); }
+try{const saved=JSON.parse(localStorage.getItem(key)||'[]');if(!Array.isArray(saved)||!saved.every(r=>r&&typeof r.name==='string'&&Object.hasOwn(currencies,r.currency)&&Number.isFinite(r.amount)&&r.amount>=0&&Number.isFinite(r.twd)&&r.twd>=0&&typeof r.date==='string'))throw Error();records=saved;}catch{readError=true;$('notice').textContent='無法讀取既有紀錄，暫停新增以免覆蓋。請先匯出或檢查瀏覽器儲存設定。';}
+try{const prefs=JSON.parse(localStorage.getItem('bella-currencies')||'{}');$('from').value=currencies[prefs.from]?prefs.from:'KRW';$('to').value=currencies[prefs.to]?prefs.to:'TWD';}catch{$('from').value='KRW';$('to').value='TWD';}
+function amountValue(){const s=$('amount').value.trim(),n=Number(s);return s!==''&&Number.isFinite(n)&&n>=0?n:null;}
+function convert(){const n=amountValue();$('rate').textContent='';if(!rates)return;if(n===null){$('result').textContent='請輸入有效金額';return;}const f=$('from').value,t=$('to').value,x=n*rates[t]/rates[f];$('result').textContent=Number.isFinite(x)?currency(x,t):'金額過大';$('rate').textContent='1 '+f+' ≈ '+(rates[t]/rates[f]).toLocaleString('zh-TW',{maximumSignificantDigits:6})+' '+t;}
+function persist(){try{localStorage.setItem(key,JSON.stringify(records));storageError=false;}catch{storageError=true;}return !storageError;}
+function resetEdit(){editing=-1;$('name').value='';$('save').textContent='＋ 記錄這筆消費';$('cancel').hidden=true;$('name').classList.remove('editing');}
+function render(){const tbody=$('rows');tbody.replaceChildren();if(!records.length){const tr=document.createElement('tr'),td=document.createElement('td');td.colSpan=5;td.textContent='還沒有紀錄，買完第一樣就記下來吧！';tr.append(td);tbody.append(tr);}
+records.forEach((r,i)=>{const tr=document.createElement('tr');for(const text of [r.date,r.name,currency(r.amount,r.currency),number(r.twd)]){const td=document.createElement('td');td.textContent=text;tr.append(td);}const actions=document.createElement('td');for(const [label,fn] of [['修改',()=>edit(i)],['刪除',()=>remove(i)]]){const b=document.createElement('button');b.className='action';b.textContent=label;b.setAttribute('aria-label',label+' '+r.name);b.onclick=fn;actions.append(b);}tr.append(actions);tbody.append(tr);});$('total').textContent=number(records.reduce((s,r)=>s+r.twd,0));$('export').disabled=!records.length;}
+function edit(i){if(readError)return;const r=records[i];editing=i;$('amount').value=r.amount;$('from').value=r.currency;$('to').value='TWD';$('name').value=r.name;$('name').classList.add('editing');$('save').textContent='儲存修改';$('cancel').hidden=false;$('notice').textContent='修改項目或原價；原價和幣別不變時，保留原台幣金額。';convert();window.scrollTo({top:0,behavior:'smooth'});}
+function remove(i){if(!confirm('刪除「'+records[i].name+'」這筆紀錄？'))return;records.splice(i,1);resetEdit();const ok=persist();render();$('notice').textContent=ok?'已刪除紀錄。':'已從畫面刪除，但儲存失敗；重新整理後可能恢復。';}
+function localDate(){const d=new Date();return d.getFullYear()+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+String(d.getDate()).padStart(2,'0');}
+$('save').onclick=()=>{if(readError)return;const name=$('name').value.trim(),n=amountValue(),f=$('from').value;if(!name){$('notice').textContent='請填寫消費項目。';$('name').focus();return;}if(n===null||!rates){$('notice').textContent='請確認金額與匯率已載入。';return;}const old=editing>=0?records[editing]:null,unchanged=old&&old.amount===n&&old.currency===f;const twd=unchanged?old.twd:Math.round(n*rates.TWD/rates[f]*100)/100;const sum=records.reduce((s,r,i)=>s+(i===editing?0:r.twd),0);if(!Number.isFinite(twd)||twd>1e12||sum+twd>1e13){$('notice').textContent='金額過大，請確認輸入。';return;}const row={name,amount:n,currency:f,twd,date:old?old.date:localDate(),rateUpdatedAt:unchanged?old.rateUpdatedAt:rateDate};if(old)records[editing]=row;else records.unshift(row);const ok=persist();resetEdit();render();$('notice').textContent=ok?'已儲存「'+name+'」。':'已加入清單，但瀏覽器無法保存；請立即匯出備份。';};
+$('cancel').onclick=()=>{resetEdit();$('notice').textContent='已取消修改。';};
+for(const id of ['from','to'])$(id).onchange=()=>{convert();try{localStorage.setItem('bella-currencies',JSON.stringify({from:$('from').value,to:$('to').value}));}catch{}};
+$('amount').oninput=convert;$('swap').onclick=()=>{const f=$('from').value;$('from').value=$('to').value;$('to').value=f;$('from').onchange();};
+function csvCell(v){let s=String(v??'');if(/^[\s]*[=+@-]/.test(s))s="'"+s;return '"'+s.replaceAll('"','""')+'"';}
+$('export').onclick=()=>{const values=[['日期','消費項目','原幣金額','幣別','約台幣','匯率資料時間'],...records.map(r=>[r.date,r.name,r.amount,r.currency,r.twd.toFixed(2),r.rateUpdatedAt||'未記錄']),['合計','','','TWD',records.reduce((s,r)=>s+r.twd,0).toFixed(2),'']];const blob=new Blob(['\uFEFF'+values.map(r=>r.map(csvCell).join(',')).join('\r\n')],{type:'text/csv;charset=utf-8;'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='Bella_Shopping_'+localDate().replaceAll('/','-')+'.csv';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),30000);};
+async function loadRates(){ $('retry').hidden=true;$('save').disabled=true;$('result').textContent='載入匯率中…';const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),12000);try{let data=null;try{const cache=JSON.parse(localStorage.getItem('bella-rate-cache')||'null');if(cache&&Date.now()-cache.saved<3600000&&Date.now()/1000<cache.data.time_next_update_unix)data=cache.data;}catch{}if(!data){const res=await fetch('https://open.er-api.com/v6/latest/USD',{signal:controller.signal});if(!res.ok)throw Error();data=await res.json();}if(data.result!=='success'||!Object.keys(currencies).every(c=>Number.isFinite(data.rates?.[c])&&data.rates[c]>0)||!Number.isFinite(data.time_last_update_unix))throw Error();rates=data.rates;rateDate=new Date(data.time_last_update_unix*1000).toLocaleString('zh-TW',{timeZone:'Asia/Taipei'});$('updated').textContent='匯率更新：'+rateDate+'（台灣時間）';try{localStorage.setItem('bella-rate-cache',JSON.stringify({saved:Date.now(),data}));}catch{}$('save').disabled=readError;convert();}catch{rates=null;$('result').textContent='無法取得匯率，請確認網路後重試';$('retry').hidden=false;}finally{clearTimeout(timer);}}
+$('retry').onclick=loadRates;render();loadRates();
+</script>
 </html>
